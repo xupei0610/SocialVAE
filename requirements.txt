@@ -1,0 +1,8 @@
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file> -c pytorch
+# platform: linux-64
+cudatoolkit=10.2.89
+numpy=1.19.2
+python=3.8.8
+pytorch=1.8.0
+tensorboard=2.4.1
