@@ -10,7 +10,7 @@ combined with a social attention mechanism and backward posterior approximation 
 We show that SocialVAE improves current state-of-the-art performance on several pedestrian trajectory prediction benchmarks,
 including the ETH/UCY benchmark, the Stanford Drone Dataset and SportVU NBA movement dataset.
 
-Our approach shows low errors in trajectory prediction on challenging scenarios with complex and intensive human-human interctions. Below we show the prediction of our model for basketball players. We also include our NBA datasets(`data/nba`) in this repository. **Caution:** the NBA datasets were recorded in the unit of feet. Please refer to our paper for more details.
+Our approach shows low errors in trajectory prediction on challenging scenarios with complex and intensive human-human interctions. Below we show the prediction of our model for basketball players. We also include our NBA datasets (`data/nba`) in this repository. **Caution:** the NBA datasets were recorded in the unit of feet. Please refer to our paper for more details.
 | Predictions | Heatmap | Attention |
 |-------------|---------|-----------|
 | ![](gallery/scenario_nba_1.png) | ![](gallery/scenario_nba_1_heatmap.png) | ![](gallery/scenario_nba_1_att.png) |
@@ -95,3 +95,12 @@ A key hyparameter that needs to pay attention is `NEIGHBOR_RADIUS`. In a common 
 ### Training
 
     $ python main.py --train_data <folder_of_training_data> --test_data <folder_of_testing_data> --ckpt_dir <checkpoint_folder> --config <config_file>
+
+### Evaluation
+
+    # with PFC
+    $ python main.py --test_data <folder_of_testing_data> --ckpt_dir <checkpoint_folder> --config <config_file> --fpc
+
+    # w/o FPC
+    $ python main.py --test_data <folder_of_testing_data> --ckpt_dir <checkpoint_folder> --config <config_file>
+    
