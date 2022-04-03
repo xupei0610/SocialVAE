@@ -227,7 +227,12 @@ class SocialVAE(torch.nn.Module):
             b[t] = h[-1]
         return x, b
 
-    def forward(self, x, neighbor=None):
+    def forward(self, x, neighbor=None, n_predictions=1):
+        # x: L x N x 6
+        # neighbor: L x N x Nn x 6, padding at Nn dimension using large value (e.g. 1e9)
+        # output: n_predictions x horizon x N x 2, for n_predictions > 0
+        #         horizon x N x 2, n_predictions=0 for deterministic prediction
+        stochastic = n_predictions > 0
         if neighbor is None:
             neighbor_shape = [_ for _ in x.shape]
             neighbor_shape.insert(-1, 0)
@@ -242,12 +247,17 @@ class SocialVAE(torch.nn.Module):
         o = self.enc(x, neighbor)
         h = self.rnn_fy_init(o)
         h = h.view(N, -1, self.rnn_fy.num_layers)
-        h = h.permute(2, 0, 1).contiguous()
+        h = h.permute(2, 0, 1)
+        if stochastic: h = h.repeat(1, n_predictions, 1)
+        h = h.contiguous()
 
         D = []
         for t in range(self.horizon):
             p_z = self.p_z(h[-1])
-            z = p_z.sample()
+            if stochastic:
+                z = p_z.sample()
+            else:
+                z = p_z.mean
             d = self.dec(z, h[-1])[0]
             D.append(d)
             if t == self.horizon - 1: break
@@ -256,12 +266,17 @@ class SocialVAE(torch.nn.Module):
 
         d = torch.stack(D)
         pred = torch.cumsum(d, 0)
-        pred = pred + x[-1,...,:2].unsqueeze(0)
+        if stochastic:
+            pred = pred.view(pred.size(0), n_predictions, -1, pred.size(-1)).permute(1, 0, 2, 3)
+        pred = pred + x[-1,...,:2]
         if C < 3: pred = pred.squeeze(1)
         return pred
 
 
     def loss(self, x, y, neighbor):
+        # x: L x N x 6
+        # y: horizon x N x 2
+        # neighbor: (L+horizon) x N x Nn x 6, padding at Nn dimension using large value (e.g. 1e9)
         C = x.dim()
         if C < 3:
             x = x.unsqueeze(1)

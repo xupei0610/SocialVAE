@@ -169,19 +169,17 @@ for epoch in range(1, 2 if train_data is None else config.EPOCHS+1):
                     batch, len(test_dataset)
                 ))
 
-                x = x.repeat(1, 20, 1)
-                neighbor = neighbor.repeat(1, 20, 1, 1)
                 if settings.fpc:
                     y_ = []
                     for _ in range(5):
-                        y_.extend(model(x, neighbor).chunk(20, dim=1))
-                    y_ = torch.stack(y_, 0)
+                        y_.append(model(x, neighbor, n_predictions=20))
+                    y_ = torch.cat(y_, 0)
                     cand = []
                     for i in range(y_.size(-2)):
                         cand.append(FPC(y_[..., i, :].cpu().numpy(), n_samples=20))
                     y_ = torch.stack([y_[_,:,i] for i, _ in enumerate(cand)], 2)
                 else:
-                    y_ = torch.stack(model(x, neighbor).chunk(20, dim=1), 0)
+                    y_ = model(x, neighbor, n_predictions=20)
                 ade, fde = ADE_FDE(y_, y)
                 ade, fde = ade.cpu().numpy(), fde.cpu().numpy()
                 ADE.append(ade)
