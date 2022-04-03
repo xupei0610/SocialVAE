@@ -50,7 +50,7 @@ For example,
 
 ## Evaluation and Pretrained Models
 
-We provide the dataset files in `data` folder and our pretained models in `models` folder. We also provide the configuration files that we used during training in `config` folder. 
+We provide our pretained models in `models` folder and the training and testing data in `data` folder and. We also provide the configuration files that we used during training in `config` folder. 
 
 Command to evaluate a pretrained model:
 
@@ -72,13 +72,13 @@ For example,
     $ python main.py --test_data data/nba/rebound/test --ckpt_dir models/nba/rebound --config config.nba_rebound --fpc
     $ python main.py --test_data data/nba/score/test --ckpt_dir models/nba/score --config config.nba_score --fpc
 
-Remove `--fpc` to see evaluation results without FPC.
+Remove `--fpc` to see evaluation results without FPC. Please refer to the paper for details of FPC.
 
 ## Training New Model
 
 ### Prepare your own dataset
 
-Our code support loading trajectories from multiple scenes. Just split your data into training and seting sets and put each scene as a `txt` data file into the corresponding folder.
+Our code supports loading trajectories from multiple scenes. Just split your data into training and testing sets and put each scene as a `txt` data file into the corresponding folder.
 
 Each line in the data files is in the format of
 
@@ -90,7 +90,7 @@ where `frame_ID` and `agent_ID` are integers and `pos_x` and `pos_y` are float n
 
 We provide our config files in `config` folder, which can be used as reference.
 
-A key hyparameter that needs to pay attention is `NEIGHBOR_RADIUS`. In a common scenario with causal human walking, it can be values from 2 to 5. For intensive human movement, it could be 5-10 and even larger.
+A key hyperparameter that needs to pay attention is `NEIGHBOR_RADIUS`. In a common scenario with causal human walking, it can be values from 2 to 5. For intensive human movement, it could be 5-10 and even larger.
 
 ### Training
 
