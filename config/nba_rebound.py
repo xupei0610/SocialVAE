@@ -9,9 +9,9 @@ EPOCH_BATCHES = None
 NEIGHBOR_RADIUS = 10000
 OB_HORIZON = 8
 PRED_HORIZON = 12
-# ids of ignored agents
-# -1 for ball in nba dataset
-EXCLUSIVE_AGENTS = [-1]
+# group name of inclusive agents; leave empty for all agents
+# non-inclusive agents will appear as neighbors only
+INCLUSIVE_GROUPS = ["PLAYER"]
 
 # evaluation
 WORLD_SCALE = 0.3048 # foot to meter

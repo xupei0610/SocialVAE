@@ -82,9 +82,9 @@ Our code support loading trajectories from multiple scenes. Just split your data
 
 Each line in the data files is in the format of
 
-    frame_ID pedestrian_ID pos_x pos_y
+    frame_ID:int agent_ID:int pos_x:float pos_y:float group:str
 
-where `frame_ID` and `pedestrian_ID` are integers and `pos_x` and `pos_y` are float numbers.
+where `frame_ID` and `agent_ID` are integers and `pos_x` and `pos_y` are float numbers. The `group` field is optional to identify the agent type/group.
 
 ### Setup your config file
 

@@ -9,8 +9,9 @@ EPOCH_BATCHES = 500
 NEIGHBOR_RADIUS = 2
 OB_HORIZON = 8
 PRED_HORIZON = 12
-# ids of ignored agents
-EXCLUSIVE_AGENTS = []
+# group name of inclusive agents; leave empty for all agents
+# non-inclusive agents will appear as neighbors only
+INCLUSIVE_GROUPS = []
 
 # evaluation
 WORLD_SCALE = 1

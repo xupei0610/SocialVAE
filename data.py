@@ -10,7 +10,7 @@ import numpy as np
 class Dataloader(torch.utils.data.Dataset):
     def __init__(self, 
         files: List[str], ob_horizon: int, pred_horizon: int,
-        frameskip: int=1, exclusive_agent_ids: Optional[Sequence]=None,
+        frameskip: int=1, inclusive_groups: Optional[Sequence]=None,
         batch_first: bool=False, seed: Optional[int]=None,
         device: Optional[torch.device]=None,
         flip: bool=False, rotate: bool=False, scale: bool=False
@@ -34,17 +34,17 @@ class Dataloader(torch.utils.data.Dataset):
 
         frameskip = int(frameskip) if frameskip and int(frameskip) > 1 else 1
 
-        if exclusive_agent_ids is None:
-            exclusive_agent_ids = [[] for _ in range(len(files))]
-        assert(len(exclusive_agent_ids) == len(files))
+        if inclusive_groups is None:
+            inclusive_groups = [[] for _ in range(len(files))]
+        assert(len(inclusive_groups) == len(files))
 
-        files = [(f, exclusive) for f, exclusive in zip(files, exclusive_agent_ids)]
-        for f, exclusive in files:
+        files = [(f, incl_g) for f, incl_g in zip(files, inclusive_groups)]
+        for f, incl_g in files:
             if os.path.isdir(f):
                 for ff in os.listdir(f):
                      if not ff.startswith(".") and not ff.startswith("_"):
-                        files.append((os.path.join(f, ff), exclusive))
-        files = [(f, exc) for f, exc in files if os.path.exists(f) and not os.path.isdir(f)]
+                        files.append((os.path.join(f, ff), incl_g))
+        files = [(f, incl_g) for f, incl_g in files if os.path.exists(f) and not os.path.isdir(f)]
         files = sorted(files, key=lambda _: _[0])
         
         self.files = []
@@ -53,7 +53,7 @@ class Dataloader(torch.utils.data.Dataset):
         sys.stdout.write("\r\033[K Loading...{}/{}".format(
             0, len(files)
         ))
-        for fid, (f, exclusive) in enumerate(files):
+        for fid, (f, incl_g) in enumerate(files):
             sys.stdout.write("\r\033[K Loading...{}/{}".format(
                 fid+1, len(files)
             ))
@@ -62,7 +62,7 @@ class Dataloader(torch.utils.data.Dataset):
                 data = self.load(record)
             if len(data) > (ob_horizon+pred_horizon-1)*frameskip:
                 data = self.extend(data, frameskip)
-                self.load_traj(data, ob_horizon, pred_horizon, frameskip, exclusive)
+                self.load_traj(data, ob_horizon, pred_horizon, frameskip, incl_g)
             self.data_len[f] = len(self.data) - total_data
             total_data = len(self.data)
         print("\n   {} trajectories loaded.".format(total_data))
@@ -124,7 +124,7 @@ class Dataloader(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-    def load_traj(self, data, ob_horizon, pred_horizon, frameskip, exclusive):
+    def load_traj(self, data, ob_horizon, pred_horizon, frameskip, inclusive_groups):
         time = np.sort(list(data.keys()))
         horizon = (ob_horizon+pred_horizon-1)*frameskip
 
@@ -134,7 +134,7 @@ class Dataloader(torch.utils.data.Dataset):
             t0 = time[tid0]
             dt = time[tid0+1] - t0
 
-            idx = [_ for _ in data[t0].keys() if _ not in exclusive]
+            idx = [aid for aid, d in data[t0].items() if not inclusive_groups or d[-1] in inclusive_groups]
             idx_all = list(data[t0].keys())
             if idx:
                 for tid in range(tid0+frameskip, tid1+1, frameskip):
@@ -143,28 +143,28 @@ class Dataloader(torch.utils.data.Dataset):
                         tid0 = tid-1
                         idx = []
                         break
-                    idx_cur = [_ for _ in data[t].keys() if _ not in exclusive]
+                    idx_cur = [aid for aid, d in data[t].items() if not inclusive_groups or d[-1] in inclusive_groups]
                     if not idx_cur: # ignore empty frames
                         tid0 = tid
                         idx = []
                         break
                     idx = np.intersect1d(idx, idx_cur)
                     if len(idx) == 0: break
-                    idx_all.extend(idx_cur)
+                    idx_all.extend(data[t].keys())
             if len(idx):
                 idx_all = np.concatenate((idx, np.setdiff1d(idx_all, idx)))
                 for i in idx:
-                    data_dim = len(data[time[tid0]][i])
+                    data_dim = len(data[time[tid0]][i])-1
                     if len(idx_all) == 1:
-                        agent = [data[time[tid]][i] for tid in range(tid0, tid1+1, frameskip)]
+                        agent = [data[time[tid]][i][:data_dim] for tid in range(tid0, tid1+1, frameskip)]
                         neighbor = [[[1e9]*data_dim] for _ in range(len(agent))]
                     else:
                         agent, neighbor = [], []
                         for tid in range(tid0, tid1+1, frameskip):
                             t = time[tid]
-                            agent.append(data[t][i])
+                            agent.append(data[t][i][:data_dim])
                             neighbor.append([
-                                data[t][j] if j in data[t] else [1e9]*data_dim
+                                data[t][j][:data_dim] if j in data[t] else [1e9]*data_dim
                                 for j in idx_all if i != j
                             ])
                     self.data.append((np.float32(agent), np.float32(neighbor)))
@@ -240,7 +240,8 @@ class Dataloader(torch.utils.data.Dataset):
             idx = int(float(item[1]))
             x = float(item[2])
             y = float(item[3])
+            group = item[4] if len(item) > 4 else None
             if t not in data:
                 data[t] = {}
-            data[t][idx] = [x, y]
+            data[t][idx] = [x, y, group]
         return data

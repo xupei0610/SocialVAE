@@ -21,7 +21,7 @@ parser.add_argument("--fpc", action="store_true", default=False)
 settings = parser.parse_args()
 config = __import__(settings.config, globals(), locals(), [
     "LEARNING_RATE", "EPOCHS", "BATCH_SIZE", "EPOCH_BATCHES",
-    "NEIGHBOR_RADIUS", "OB_HORIZON", "PRED_HORIZON", "EXCLUSIVE_AGENTS"
+    "NEIGHBOR_RADIUS", "OB_HORIZON", "PRED_HORIZON", "INCLUSIVE_GROUPS"
 ], 0)
 
 if settings.device is None:
@@ -44,24 +44,24 @@ kwargs = dict(
 train_data, test_data = None, None
 if settings.train_data:
     print(settings.train_data)
-    if config.EXCLUSIVE_AGENTS is not None:
-        exclusive = [config.EXCLUSIVE_AGENTS for _ in range(len(settings.train_data))]
+    if config.INCLUSIVE_GROUPS is not None:
+        inclusive = [config.INCLUSIVE_GROUPS for _ in range(len(settings.train_data))]
     else:
-        exclusive = None
+        inclusive = None
     train_dataset = Dataloader(
-        settings.train_data, **kwargs, exclusive_agent_ids=exclusive, 
+        settings.train_data, **kwargs, inclusive_groups=inclusive, 
         seed=settings.seed, flip=True, rotate=True, scale=True)
     train_data = torch.utils.data.DataLoader(train_dataset,
         batch_size=config.BATCH_SIZE, collate_fn=train_dataset.collate_fn, shuffle=True, drop_last=True)
     batches = len(train_dataset)//config.BATCH_SIZE if config.EPOCH_BATCHES is None else config.EPOCH_BATCHES
 if settings.test_data:
     print(settings.test_data)
-    if config.EXCLUSIVE_AGENTS is not None:
-        exclusive = [config.EXCLUSIVE_AGENTS for _ in range(len(settings.test_data))]
+    if config.INCLUSIVE_GROUPS is not None:
+        inclusive = [config.INCLUSIVE_GROUPS for _ in range(len(settings.test_data))]
     else:
-        exclusive = None
+        inclusive = None
     test_dataset = Dataloader(
-        settings.test_data, **kwargs, exclusive_agent_ids=exclusive)
+        settings.test_data, **kwargs, inclusive_groups=inclusive)
     test_data = torch.utils.data.DataLoader(test_dataset, 
         batch_size=config.BATCH_SIZE, collate_fn=test_dataset.collate_fn,
         shuffle=False, drop_last=False)
@@ -168,7 +168,7 @@ for epoch in range(1, 2 if train_data is None else config.EPOCHS+1):
                 sys.stdout.write("\r\033[K Evaluating...{}/{}".format(
                     batch, len(test_dataset)
                 ))
-
+                
                 if settings.fpc:
                     y_ = []
                     for _ in range(5):
