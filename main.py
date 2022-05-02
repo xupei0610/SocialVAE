@@ -170,15 +170,19 @@ for epoch in range(1, 2 if train_data is None else config.EPOCHS+1):
                 ))
                 
                 if settings.fpc:
+                    # collect 100 predictions for each datum item
                     y_ = []
                     for _ in range(5):
                         y_.append(model(x, neighbor, n_predictions=20))
-                    y_ = torch.cat(y_, 0)
+                    y_ = torch.cat(y_, 0) # 100 x PRED_HORIZON x N x 2
+                    # run FPC on each datum item (the 3rd dim)
                     cand = []
                     for i in range(y_.size(-2)):
                         cand.append(FPC(y_[..., i, :].cpu().numpy(), n_samples=20))
+                    # n_samples x PRED_HORIZON x N x 2
                     y_ = torch.stack([y_[_,:,i] for i, _ in enumerate(cand)], 2)
                 else:
+                    # 20 x PRED_HORIZON x N x 2
                     y_ = model(x, neighbor, n_predictions=20)
                 ade, fde = ADE_FDE(y_, y)
                 ade, fde = ade.cpu().numpy(), fde.cpu().numpy()
