@@ -180,7 +180,7 @@ class Dataloader(torch.utils.data.Dataset):
         i = 0
         while i < len(time)-1:
             if time[i+1] - time[i] != dt:
-                np.insert(time, i+1, time[i]+dt)
+                time = np.insert(time, i+1, time[i]+dt)
             i += 1
         # ignore those only appearing at one frame
         for tid, t in enumerate(time):
@@ -189,7 +189,8 @@ class Dataloader(torch.utils.data.Dataset):
             for idx in data[t].keys():
                 t0 = time[tid-frameskip] if tid >= frameskip else None
                 t1 = time[tid+frameskip] if tid+frameskip < len(time) else None
-                if (t0 is None or idx not in data[t0]) and (t1 is None or idx not in data[t1]):
+                if (t0 is None or t0 not in data or idx not in data[t0]) and \
+                (t1 is None or t1 not in data or idx not in data[t1]):
                     removed.append(idx)
             for idx in removed:
                 data[t].pop(idx)
