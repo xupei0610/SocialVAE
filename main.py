@@ -66,7 +66,7 @@ if settings.test_data:
         batch_size=config.BATCH_SIZE, collate_fn=test_dataset.collate_fn,
         shuffle=False, drop_last=False)
 if settings.train_data and settings.ckpt_dir:
-    logger = SummaryWriter(ckpt_dir=settings.ckpt_dir)
+    logger = SummaryWriter(log_dir=settings.ckpt_dir)
 else:
     logger = None
 
