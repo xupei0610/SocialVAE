@@ -40,10 +40,24 @@ if __name__ == "__main__":
     #####                                                                    ######
     ###############################################################################
     kwargs = dict(
-            batch_first=False,
+            batch_first=False, ob_radius=config.NEIGHBOR_RADIUS,
             ob_horizon=config.OB_HORIZON, pred_horizon=config.PRED_HORIZON,
-            device=settings.device)
+            device=settings.device, seed=settings.seed)
     train_data, test_data = None, None
+    if settings.test_data:
+        print(settings.test_data)
+        if config.INCLUSIVE_GROUPS is not None:
+            inclusive = [config.INCLUSIVE_GROUPS for _ in range(len(settings.test_data))]
+        else:
+            inclusive = None
+        test_dataset = Dataloader(
+            settings.test_data, **kwargs, inclusive_groups=inclusive,
+            batch_size=config.BATCH_SIZE, shuffle=False
+        )
+        test_data = torch.utils.data.DataLoader(test_dataset, 
+            collate_fn=test_dataset.collate_fn,
+            batch_sampler=test_dataset.batch_sampler
+        )
     if settings.train_data:
         print(settings.train_data)
         if config.INCLUSIVE_GROUPS is not None:
@@ -52,35 +66,25 @@ if __name__ == "__main__":
             inclusive = None
         train_dataset = Dataloader(
             settings.train_data, **kwargs, inclusive_groups=inclusive, 
-            seed=settings.seed, flip=True, rotate=True, scale=True)
+            flip=True, rotate=True, scale=True,
+            batch_size=config.BATCH_SIZE, shuffle=True, batches_per_epoch=config.EPOCH_BATCHES
+        )
+
         train_data = torch.utils.data.DataLoader(train_dataset,
-            batch_size=config.BATCH_SIZE, collate_fn=train_dataset.collate_fn, shuffle=True, drop_last=True)
-        batches = len(train_dataset)//config.BATCH_SIZE if config.EPOCH_BATCHES is None else config.EPOCH_BATCHES
-    if settings.test_data:
-        print(settings.test_data)
-        if config.INCLUSIVE_GROUPS is not None:
-            inclusive = [config.INCLUSIVE_GROUPS for _ in range(len(settings.test_data))]
-        else:
-            inclusive = None
-        test_dataset = Dataloader(
-            settings.test_data, **kwargs, inclusive_groups=inclusive)
-        test_data = torch.utils.data.DataLoader(test_dataset, 
-            batch_size=config.BATCH_SIZE, collate_fn=test_dataset.collate_fn,
-            shuffle=False, drop_last=False)
-    if settings.train_data and settings.ckpt_dir:
-        logger = SummaryWriter(log_dir=settings.ckpt_dir)
-    else:
-        logger = None
+            collate_fn=train_dataset.collate_fn,
+            batch_sampler=train_dataset.batch_sampler
+        )
+        batches = train_dataset.batches_per_epoch
 
     ###############################################################################
     #####                                                                    ######
-    ##### load checkpoint file                                               ######
+    ##### load model                                                         ######
     #####                                                                    ######
     ###############################################################################
     model = SocialVAE(horizon=config.PRED_HORIZON, observe_radius=config.NEIGHBOR_RADIUS)
     model.to(settings.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
-
+    start_epoch = 0
     if settings.ckpt_dir:
         ckpt = os.path.join(settings.ckpt_dir, "ckpt-last")
         ckpt_best = os.path.join(settings.ckpt_dir, "ckpt-best")
@@ -88,11 +92,9 @@ if __name__ == "__main__":
             state_dict = torch.load(ckpt_best, map_location=settings.device)
             ade_best = state_dict["ade"]
             fde_best = state_dict["fde"]
-            epoch_best = state_dict["epoch"]
         else:
             ade_best = 100000
             fde_best = 100000
-            epoch_best = -1
         if not settings.train_data:
             ckpt = ckpt_best
         if os.path.exists(ckpt):
@@ -102,19 +104,29 @@ if __name__ == "__main__":
             if "optimizer" in state_dict:
                 optimizer.load_state_dict(state_dict["optimizer"])
                 rng_state = [r.to("cpu") if torch.is_tensor(r) else r for r in state_dict["rng_state"]]
+            if "epoch" in state_dict:
+                start_epoch = state_dict["epoch"]
+    end_epoch = start_epoch+1 if train_data is None or start_epoch >= settings.epochs else settings.epochs
 
+
+    if settings.train_data and settings.ckpt_dir:
+        logger = SummaryWriter(log_dir=settings.ckpt_dir)
+    else:
+        logger = None
 
     if train_data is not None:
         log_str = "\r\033[K {cur_batch:>"+str(len(str(batches)))+"}/"+str(batches)+" [{done}{remain}] -- time: {time}s - {comment}"    
         progress = 20/batches if batches > 20 else 1
-        data_iter = iter(train_data) 
-    for epoch in range(1, 2 if train_data is None else config.EPOCHS+1):
+        optimizer.zero_grad()
+
+    for epoch in range(start_epoch+1, end_epoch+1):
         ###############################################################################
         #####                                                                    ######
         ##### train                                                              ######
         #####                                                                    ######
         ###############################################################################
-        if train_data is not None:
+        losses = None
+        if train_data is not None and epoch <= settings.epochs:
             print("Epoch {}/{}".format(epoch, config.EPOCHS))
             tic = time.time()
             set_rng_state(rng_state, settings.device)
@@ -123,18 +135,14 @@ if __name__ == "__main__":
             sys.stdout.write(log_str.format(
                 cur_batch=0, done="", remain="."*int(batches*progress),
                 time=round(time.time()-tic), comment=""))
-            for batch in range(batches):
-                try:
-                    x, y, neighbor = next(data_iter)
-                except StopIteration:
-                    data_iter = iter(train_data)
-                    x, y, neighbor = next(data_iter)
-                
-                loss = model.loss(x, y, neighbor)
-                optimizer.zero_grad()
+            for batch, item in enumerate(train_data):
+                if train_dataset.device != device:
+                    item = [_.to(device) for _ in item]
+                res = model(*item)
+                loss = model.loss(*res)
                 loss["loss"].backward()
                 optimizer.step()
-
+                optimizer.zero_grad()
                 for k, v in loss.items():
                     if k not in losses: 
                         losses[k] = v.item()
@@ -146,7 +154,6 @@ if __name__ == "__main__":
                     time=round(time.time()-tic),
                     comment=" - ".join(["{}: {:.4f}".format(k, v) for k, v in losses.items()])
                 ))
-                if batch == batches: break
             rng_state = get_rng_state(settings.device)
             print()
 
@@ -160,6 +167,7 @@ if __name__ == "__main__":
             sys.stdout.write("\r\033[K Evaluating...{}/{}".format(
                 0, len(test_dataset)
             ))
+            tic = time.time()
             model.eval()
             ADE, FDE = [], []
             set_rng_state(init_rng_state, settings.device)
@@ -172,12 +180,10 @@ if __name__ == "__main__":
                     ))
                     
                     if settings.fpc:
-                        # collect 100 predictions for each datum item
                         y_ = []
                         for _ in range(5):
                             y_.append(model(x, neighbor, n_predictions=20))
-                        y_ = torch.cat(y_, 0) # 100 x PRED_HORIZON x N x 2
-                        # run FPC on each datum item (the 3rd dim)
+                        y_ = torch.cat(y_, 0)
                         cand = []
                         for i in range(y_.size(-2)):
                             cand.append(FPC(y_[..., i, :].cpu().numpy(), n_samples=20))
@@ -187,16 +193,17 @@ if __name__ == "__main__":
                         # 20 x PRED_HORIZON x N x 2
                         y_ = model(x, neighbor, n_predictions=20)
                     ade, fde = ADE_FDE(y_, y)
-                    ade, fde = ade.cpu().numpy(), fde.cpu().numpy()
+                    ade = torch.min(ade, dim=0)[0]
+                    fde = torch.min(fde, dim=0)[0]
                     ADE.append(ade)
                     FDE.append(fde)
 
 
-            ADE = np.concatenate(ADE, axis=1).transpose(1, 0).min(1)*config.WORLD_SCALE
-            FDE = np.concatenate(FDE, axis=1).transpose(1, 0).min(1)*config.WORLD_SCALE
+            ADE = torch.cat(ADE)
+            FDE = torch.cat(FDE)
             ade = ADE.mean()
             fde = FDE.mean()
-            sys.stdout.write("\r\033[K ADE: {:.2f}; FDE: {:.2f} ({} FPC)".format(ade, fde, "with" if settings.fpc else "w/o"))
+            sys.stdout.write("\r\033[K ADE: {:.2f}; FDE: {:.2f} -- time: {}s".format(ade, fde, int(time.time()-tic)))
             print()
 
         ###############################################################################
@@ -204,7 +211,7 @@ if __name__ == "__main__":
         ##### log                                                                ######
         #####                                                                    ######
         ###############################################################################
-        if train_data is not None and settings.ckpt_dir:
+        if losses is not None and settings.ckpt_dir:
             if logger is not None:
                 for k, v in losses.items():
                     logger.add_scalar("train/{}".format(k), v, epoch)
@@ -216,10 +223,9 @@ if __name__ == "__main__":
                 ade=ade, fde=fde, epoch=epoch, rng_state=rng_state
             )
             torch.save(state, ckpt)
-            if ade+fde < ade_best+fde_best:
+            if ade < ade_best:
                 ade_best = ade
                 fde_best = fde
-                epoch_best = epoch
                 state = dict(
                     model=state["model"],
                     ade=ade, fde=fde, epoch=epoch

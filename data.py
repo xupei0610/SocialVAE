@@ -10,13 +10,40 @@ from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExec
 
 class Dataloader(torch.utils.data.Dataset):
 
+    class FixedNumberBatchSampler(torch.utils.data.sampler.BatchSampler):
+        def __init__(self, n_batches, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.n_batches = n_batches
+            self.sampler_iter = None #iter(self.sampler)
+        def __iter__(self):
+            # same with BatchSampler, but StopIteration every n batches
+            counter = 0
+            batch = []
+            while True:
+                if counter >= self.n_batches:
+                    break
+                if self.sampler_iter is None: 
+                    self.sampler_iter = iter(self.sampler)
+                try:
+                    idx = next(self.sampler_iter)
+                except StopIteration:
+                    self.sampler_iter = None
+                    if self.drop_last: batch = []
+                    continue
+                batch.append(idx)
+                if len(batch) == self.batch_size:
+                    counter += 1
+                    yield batch
+                    batch = []
+
     def __init__(self, 
         files: List[str], ob_horizon: int, pred_horizon: int,
+        batch_size: int, drop_last: bool=False, shuffle: bool=False, batches_per_epoch=None, 
         frameskip: int=1, inclusive_groups: Optional[Sequence]=None,
         batch_first: bool=False, seed: Optional[int]=None,
         device: Optional[torch.device]=None,
         flip: bool=False, rotate: bool=False, scale: bool=False,
-        observe_radius: Optional[float]=None
+        ob_radius: Optional[float]=None,
     ):
         super().__init__()
         self.ob_horizon = ob_horizon
@@ -24,7 +51,7 @@ class Dataloader(torch.utils.data.Dataset):
         self.horizon = self.ob_horizon+self.pred_horizon
         self.frameskip = int(frameskip) if frameskip and int(frameskip) > 1 else 1
         self.batch_first = batch_first
-        self.observe_radius = observe_radius
+        self.ob_radius = ob_radius
         self.flip = flip
         self.rotate = rotate
         self.scale = scale
@@ -74,6 +101,16 @@ class Dataloader(torch.utils.data.Dataset):
         self.rng = np.random.RandomState()
         if seed: self.rng.seed(seed)
 
+        if shuffle:
+            sampler = torch.utils.data.sampler.RandomSampler(self)
+        else:
+            sampler = torch.utils.data.sampler.SequentialSampler(self)
+        if batches_per_epoch is None:
+            self.batch_sampler = torch.utils.data.sampler.BatchSampler(sampler, batch_size, drop_last)
+            self.batches_per_epoch = len(self.batch_sampler)
+        else:
+            self.batch_sampler = self.__class__.FixedNumberBatchSampler(batches_per_epoch, sampler, batch_size, drop_last)
+            self.batches_per_epoch = batches_per_epoch
 
     def collate_fn(self, batch):
         X, Y, NEIGHBOR = [], [], []
@@ -151,7 +188,7 @@ class Dataloader(torch.utils.data.Dataset):
         if len(time) < horizon+1: return None
         valid_horizon = self.ob_horizon + self.pred_horizon
         # extend the observation radius a little bit to prevent computation errors
-        observe_radius = None if self.observe_radius is None else self.observe_radius + 0.5 
+        ob_radius = None if self.ob_radius is None else self.ob_radius + 0.5 
 
         traj = []
         e = len(time)
@@ -191,9 +228,9 @@ class Dataloader(torch.utils.data.Dataset):
                     hist = agents[:self.ob_horizon,i]  # L_ob x 6
                     future = agents[self.ob_horizon:valid_horizon,i,:2]  # L_pred x 2
                     neighbor = agents[:valid_horizon, [d for d in range(agents.shape[1]) if d != i]] # L x (N-1) x 6
-                    if observe_radius is not None:
+                    if ob_radius is not None:
                         dp = neighbor[:,:,:2] - agents[:valid_horizon,i:i+1,:2]
-                        valid = np.linalg.norm(dp, axis=-1) <= observe_radius # L x (N-1)
+                        valid = np.linalg.norm(dp, axis=-1) <= ob_radius # L x (N-1)
                         valid = np.any(valid, axis=0) # N-1
                         neighbor = neighbor[:, valid]
                     traj.append((hist, future, neighbor))
