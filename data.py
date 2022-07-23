@@ -1,23 +1,30 @@
 from typing import Optional, Sequence, List
 
 import os, sys
-import pickle
-
 import torch
 import numpy as np
 
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
+
 
 class Dataloader(torch.utils.data.Dataset):
+
     def __init__(self, 
         files: List[str], ob_horizon: int, pred_horizon: int,
         frameskip: int=1, inclusive_groups: Optional[Sequence]=None,
         batch_first: bool=False, seed: Optional[int]=None,
         device: Optional[torch.device]=None,
-        flip: bool=False, rotate: bool=False, scale: bool=False
+        flip: bool=False, rotate: bool=False, scale: bool=False,
+        observe_radius: Optional[float]=None
     ):
         super().__init__()
         self.ob_horizon = ob_horizon
+        self.pred_horizon = pred_horizon
+        self.horizon = self.ob_horizon+self.pred_horizon
+        self.frameskip = int(frameskip) if frameskip and int(frameskip) > 1 else 1
         self.batch_first = batch_first
+        self.observe_radius = observe_radius
         self.flip = flip
         self.rotate = rotate
         self.scale = scale
@@ -25,79 +32,87 @@ class Dataloader(torch.utils.data.Dataset):
             self.device = torch.device("cuda:0" if torch.cuda.is_available else "cpu") 
         else:
             self.device = device
-        if seed:
-            self.rng = np.random.RandomState()
-            self.rng.seed(seed)
-        else:
-            self.rng = np.random
-        self.data = []
-
-        frameskip = int(frameskip) if frameskip and int(frameskip) > 1 else 1
 
         if inclusive_groups is None:
             inclusive_groups = [[] for _ in range(len(files))]
         assert(len(inclusive_groups) == len(files))
 
-        files = [(f, incl_g) for f, incl_g in zip(files, inclusive_groups)]
-        for f, incl_g in files:
-            if os.path.isdir(f):
-                for ff in os.listdir(f):
-                     if not ff.startswith(".") and not ff.startswith("_"):
-                        files.append((os.path.join(f, ff), incl_g))
-        files = [(f, incl_g) for f, incl_g in files if os.path.exists(f) and not os.path.isdir(f)]
-        files = sorted(files, key=lambda _: _[0])
+        print(" Scanning files...")
+        files_ = []
+        for path, incl_g in zip(files, inclusive_groups):
+            if os.path.isdir(path):
+                files_.extend([(os.path.join(root, f), incl_g) \
+                    for root, _, fs in os.walk(path) \
+                    for f in fs if f.endswith(".txt")])
+            elif os.path.exists(path):
+                files_.append((path, incl_g))
+        data_files = sorted(files_, key=lambda _: _[0])
+
+        data = []
         
-        self.files = []
-        self.data_len = {}
-        total_data = 0
-        sys.stdout.write("\r\033[K Loading...{}/{}".format(
-            0, len(files)
-        ))
-        for fid, (f, incl_g) in enumerate(files):
-            sys.stdout.write("\r\033[K Loading...{}/{}".format(
-                fid+1, len(files)
-            ))
-            self.files.append(f)
-            with open(f, "r") as record:
-                data = self.load(record)
-            if len(data) > (ob_horizon+pred_horizon-1)*frameskip:
-                data = self.extend(data, frameskip)
-                self.load_traj(data, ob_horizon, pred_horizon, frameskip, incl_g)
-            self.data_len[f] = len(self.data) - total_data
-            total_data = len(self.data)
-        print("\n   {} trajectories loaded.".format(total_data))
+        done = 0
+        # too large of max_workers will cause the problem of memory usage
+        max_workers = min(len(data_files), torch.get_num_threads(), 20)
+        with ProcessPoolExecutor(mp_context=multiprocessing.get_context("spawn"), max_workers=max_workers) as p:
+            futures = [p.submit(self.__class__.load, self, f, incl_g) for f, incl_g in data_files]
+            for fut in as_completed(futures):
+                done += 1
+                sys.stdout.write("\r\033[K Loading data files...{}/{}".format(
+                    done, len(data_files)
+                ))
+            for fut in futures:
+                item = fut.result()
+                if item is not None:
+                    data.extend(item)
+                sys.stdout.write("\r\033[K Loading data files...{}/{} ".format(
+                    done, len(data_files)
+                ))
+        self.data = np.array(data, dtype=object)
+        del data
+        print("\n   {} trajectories loaded.".format(len(self.data)))
         
+        self.rng = np.random.RandomState()
+        if seed: self.rng.seed(seed)
+
+
     def collate_fn(self, batch):
         X, Y, NEIGHBOR = [], [], []
-        for traj, neighbor in batch:
-            traj_shape = traj.shape
+        for item in batch:
+            hist, future, neighbor = item[0], item[1], item[2]
+
+            hist_shape = hist.shape
             neighbor_shape = neighbor.shape
-            traj = np.reshape(traj, (-1, 2))
+            hist = np.reshape(hist, (-1, 2))
             neighbor = np.reshape(neighbor, (-1, 2))
             if self.flip:
                 if self.rng.randint(2):
-                    traj[..., 1] *= -1
+                    hist[..., 1] *= -1
+                    future[..., 1] *= -1
                     neighbor[..., 1] *= -1
                 if self.rng.randint(2):
-                    traj[..., 0] *= -1
+                    hist[..., 0] *= -1
+                    future[..., 0] *= -1
                     neighbor[..., 0] *= -1
             if self.rotate:
-                d = self.rng.random() * (np.pi+np.pi) 
-                s, c = np.sin(d), np.cos(d)
-                R = np.asarray([
+                rot = self.rng.random() * (np.pi+np.pi) 
+                s, c = np.sin(rot), np.cos(rot)
+                r = np.asarray([
                     [c, -s],
                     [s,  c]
                 ])
-                traj = (R @ np.expand_dims(traj, -1))[..., 0]
-                neighbor = (R @ np.expand_dims(neighbor, -1))[..., 0]
+                hist = (r @ np.expand_dims(hist, -1)).squeeze(-1)
+                future = (r @ np.expand_dims(future, -1)).squeeze(-1)
+                neighbor = (r @ np.expand_dims(neighbor, -1)).squeeze(-1)
             if self.scale:
                 s = self.rng.randn()*0.05 + 1 # N(1, 0.05)
-                traj = s * traj
+                hist = s * hist
+                future = s * future
                 neighbor = s * neighbor
-            traj = np.reshape(traj, traj_shape)
+            hist = np.reshape(hist, hist_shape)
             neighbor = np.reshape(neighbor, neighbor_shape)
-            X.append(traj[:self.ob_horizon])
-            Y.append(traj[self.ob_horizon:,...,:2])
+
+            X.append(hist)
+            Y.append(future)
             NEIGHBOR.append(neighbor)
         
         n_neighbors = [n.shape[1] for n in NEIGHBOR]
@@ -109,14 +124,14 @@ class Dataloader(torch.utils.data.Dataset):
                 for neighbor, n in zip(NEIGHBOR, n_neighbors)
             ]
         stack_dim = 0 if self.batch_first else 1
-        X = np.stack(X, stack_dim)
-        Y = np.stack(Y, stack_dim)
-        NEIGHBOR = np.stack(NEIGHBOR, stack_dim)
+        x = np.stack(X, stack_dim)
+        y = np.stack(Y, stack_dim)
+        neighbor = np.stack(NEIGHBOR, stack_dim)
 
-        X = torch.tensor(X, device=self.device, dtype=torch.float32)
-        Y = torch.tensor(Y, device=self.device, dtype=torch.float32)
-        NEIGHBOR = torch.tensor(NEIGHBOR, device=self.device, dtype=torch.float32)
-        return X, Y, NEIGHBOR
+        x = torch.tensor(x, dtype=torch.float32, device=self.device)
+        y = torch.tensor(y, dtype=torch.float32, device=self.device)
+        neighbor = torch.tensor(neighbor, dtype=torch.float32, device=self.device)
+        return x, y, neighbor
 
     def __len__(self):
         return len(self.data)
@@ -124,26 +139,33 @@ class Dataloader(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-    def load_traj(self, data, ob_horizon, pred_horizon, frameskip, inclusive_groups):
-        time = np.sort(list(data.keys()))
-        horizon = (ob_horizon+pred_horizon-1)*frameskip
+    @staticmethod
+    def load(self, filename, inclusive_groups):
+        if os.path.isdir(filename): return None
 
+        horizon = (self.horizon-1)*self.frameskip
+        with open(filename, "r") as record:
+            data = self.load_traj(record)
+        data = self.extend(data, self.frameskip)
+        time = np.sort(list(data.keys()))
+        if len(time) < horizon+1: return None
+        valid_horizon = self.ob_horizon + self.pred_horizon
+        # extend the observation radius a little bit to prevent computation errors
+        observe_radius = None if self.observe_radius is None else self.observe_radius + 0.5 
+
+        traj = []
+        e = len(time)
         tid0 = 0
-        while tid0 < len(time)-horizon:
+        while tid0 < e-horizon:
             tid1 = tid0+horizon
             t0 = time[tid0]
-            dt = time[tid0+1] - t0
-
-            idx = [aid for aid, d in data[t0].items() if not inclusive_groups or d[-1] in inclusive_groups]
-            idx_all = list(data[t0].keys())
+            
+            idx = [aid for aid, d in data[t0].items() if not inclusive_groups or any(g in inclusive_groups for g in d[-1])]
             if idx:
-                for tid in range(tid0+frameskip, tid1+1, frameskip):
+                idx_all = list(data[t0].keys())
+                for tid in range(tid0+self.frameskip, tid1+1, self.frameskip):
                     t = time[tid]
-                    if t - time[tid-1] != dt: # ignore non-continuous frames
-                        tid0 = tid-1
-                        idx = []
-                        break
-                    idx_cur = [aid for aid, d in data[t].items() if not inclusive_groups or d[-1] in inclusive_groups]
+                    idx_cur = [aid for aid, d in data[t].items() if not inclusive_groups or any(g in inclusive_groups for g in d[-1])]
                     if not idx_cur: # ignore empty frames
                         tid0 = tid
                         idx = []
@@ -152,24 +174,38 @@ class Dataloader(torch.utils.data.Dataset):
                     if len(idx) == 0: break
                     idx_all.extend(data[t].keys())
             if len(idx):
-                idx_all = np.concatenate((idx, np.setdiff1d(idx_all, idx)))
-                for i in idx:
-                    data_dim = len(data[time[tid0]][i])-1
-                    if len(idx_all) == 1:
-                        agent = [data[time[tid]][i][:data_dim] for tid in range(tid0, tid1+1, frameskip)]
-                        neighbor = [[[1e9]*data_dim] for _ in range(len(agent))]
-                    else:
-                        agent, neighbor = [], []
-                        for tid in range(tid0, tid1+1, frameskip):
-                            t = time[tid]
-                            agent.append(data[t][i][:data_dim])
-                            neighbor.append([
-                                data[t][j][:data_dim] if j in data[t] else [1e9]*data_dim
-                                for j in idx_all if i != j
-                            ])
-                    self.data.append((np.float32(agent), np.float32(neighbor)))
+                data_dim = 6
+                neighbor_idx = np.setdiff1d(idx_all, idx)
+                if len(idx) == 1 and len(neighbor_idx) == 0:
+                    agents = np.array([
+                        [data[time[tid]][idx[0]][:data_dim]] + [[1e9]*data_dim]
+                        for tid in range(tid0, tid1+1, self.frameskip)
+                    ]) # L x 2 x 6
+                else:
+                    agents = np.array([
+                        [data[time[tid]][i][:data_dim] for i in idx] +
+                        [data[time[tid]][j][:data_dim] if j in data[time[tid]] else [1e9]*data_dim for j in neighbor_idx]
+                        for tid in range(tid0, tid1+1, self.frameskip)
+                    ])  # L X N x 6
+                for i in range(len(idx)):
+                    hist = agents[:self.ob_horizon,i]  # L_ob x 6
+                    future = agents[self.ob_horizon:valid_horizon,i,:2]  # L_pred x 2
+                    neighbor = agents[:valid_horizon, [d for d in range(agents.shape[1]) if d != i]] # L x (N-1) x 6
+                    if observe_radius is not None:
+                        dp = neighbor[:,:,:2] - agents[:valid_horizon,i:i+1,:2]
+                        valid = np.linalg.norm(dp, axis=-1) <= observe_radius # L x (N-1)
+                        valid = np.any(valid, axis=0) # N-1
+                        neighbor = neighbor[:, valid]
+                    traj.append((hist, future, neighbor))
             tid0 += 1
 
+        items = []
+        for hist, future, neighbor in traj:
+            hist = np.float32(hist)
+            future = np.float32(future)
+            neighbor = np.float32(neighbor)
+            items.append((hist, future, neighbor))
+        return items
                 
     def extend(self, data, frameskip):
         time = np.sort(list(data.keys()))
@@ -232,7 +268,7 @@ class Dataloader(torch.utils.data.Dataset):
                     data[t0][i].insert(5, ay)
         return data
 
-    def load(self, file):
+    def load_traj(self, file):
         data = {}
         for row in file.readlines():
             item = row.split()
