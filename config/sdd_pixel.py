@@ -15,8 +15,8 @@ EPOCH_BATCHES = 100 # number of batches per epoch, None for data_length//batch_s
 TEST_SINCE = 400    # the epoch after which performing testing during training
 
 # testing
-PRED_SAMPLES = 20   # best of N samples
-FPC = 47            # FPC sampling rate
+PRED_SAMPLES = 20       # best of N samples
+FPC_SEARCH_RANGE = range(40, 50)   # FPC sampling rate
 
 # evaluation
 # WORLD_SCALE = 1     # in unit of meters

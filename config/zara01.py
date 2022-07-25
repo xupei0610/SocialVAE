@@ -16,7 +16,7 @@ TEST_SINCE = 300    # the epoch after which performing testing during training
 
 # testing
 PRED_SAMPLES = 20   # best of N samples
-FPC = 38            # FPC sampling rate
+FPC_SEARCH_RANGE = range(30, 50)   # FPC sampling rate
 
 # evaluation
 WORLD_SCALE = 1

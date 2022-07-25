@@ -101,3 +101,6 @@ A key hyperparameter that needs to pay attention is `NEIGHBOR_RADIUS`. In a comm
 ### Evaluation
 
     $ python main.py --test <folder_of_testing_data> --ckpt <checkpoint_folder> --config <config_file>
+
+The script will automatically run FPC hyperparameter finetuning after the training is done. To manually perform the finetuning given an existing model, please run the evaluation command with `--fpc_finetune` option.
+

@@ -12,11 +12,11 @@ LEARNING_RATE = 1e-4
 BATCH_SIZE = 128
 EPOCHS = 2000       # total number of epochs for training
 EPOCH_BATCHES = 100 # number of batches per epoch, None for data_length//batch_size
-TEST_SINCE = 1000   # the epoch after which performing testing during training
+TEST_SINCE = 1200   # the epoch after which performing testing during training
 
 # testing
 PRED_SAMPLES = 20   # best of N samples
-FPC = 37            # FPC sampling rate
+FPC_SEARCH_RANGE = range(40, 50)   # FPC sampling rate
 
 # evaluation
 WORLD_SCALE = 1
