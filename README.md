@@ -1,6 +1,6 @@
 # SocialVAE: Human Trajectory Prediction using Timewise Latents
 
-This repository is to support the paper _**SocialVAE: Human Trajectory Prediction using Timewise Latents**_.
+This is the official implementation for _**SocialVAE: Human Trajectory Prediction using Timewise Latents**_. [[arXiv](https://arxiv.org/abs/2203.08207)]
 
 
 _**Abstract**_ -- Predicting pedestrian movement is critical for human behavior analysis and also for safe and efficient human-agent interactions. 
@@ -19,8 +19,8 @@ Our approach shows low errors in trajectory prediction on challenging scenarios 
 
 ## Dependencies
 
-- Pytorch 1.8
-- Numpy 1.19
+- Pytorch 1.11
+- Numpy 1.21
 
 We recommend to install all the requirements through Conda by
 
@@ -30,61 +30,63 @@ We recommend to install all the requirements through Conda by
 
 Command to train a model from scratch:
 
-    $ python main.py --train_data <train_data_dir> --test_data <test_data_dir> --ckpt_dir <checkpoint_dir> --config <config_file>
+    $ python main.py --train <train_data_dir> --test <test_data_dir> --ckpt <checkpoint_dir> --config <config_file>
 
-For example,
-
-    # ETH/UCY benchmarks
-    $ python main.py --train_data data/eth/train --test_data data/eth/test --ckpt_dir log_eth --config config.eth_ucy
-    $ python main.py --train_data data/hotel/train --test_data data/hotel/test --ckpt_dir log_hotel --config config.eth_ucy
-    $ python main.py --train_data data/univ/train --test_data data/univ/test --ckpt_dir log_univ --config config.eth_ucy
-    $ python main.py --train_data data/zara01/train --test_data data/zara01/test --ckpt_dir log_zara01 --config config.eth_ucy
-    $ python main.py --train_data data/zara02/train --test_data data/zara02/test --ckpt_dir log_zara02 --config config.eth_ucy
-
-    # SDD benchmark
-    $ python main.py --train_data data/sdd/train --test_data data/sdd/test --ckpt_dir log_sdd --config config.sdd
-
-    # NBA benchmark
-    $ python main.py --train_data data/nba/rebound/train --test_data data/nba/rebound/test --ckpt_dir log_nba_rebound --config config.nba_rebound
-    $ python main.py --train_data data/nba/score/train --test_data data/nba/score/test --ckpt_dir log_nba_score --config config.nba_score
-
-## Evaluation and Pretrained Models
-
-We provide our pretained models in `models` folder and the training and testing data in `data` folder and. We also provide the configuration files that we used during training in `config` folder. 
-
-Command to evaluate a pretrained model:
-
-    $ python main.py --test_data <test_data_dir> --ckpt_dir <checkpoint_dir> --config <config_file>
-
-For example,
+We provide the training and testing data in `data` folder and the configuration files that we used in `config` folder. 
+To reproduce the reported results, please run
 
     # ETH/UCY benchmarks
-    $ python main.py --test_data data/eth/test --ckpt_dir models/eth --config config.eth_ucy --fpc
-    $ python main.py --test_data data/hotel/test --ckpt_dir models/hotel --config config.eth_ucy --fpc
-    $ python main.py --test_data data/univ/test --ckpt_dir models/univ --config config.eth_ucy --fpc
-    $ python main.py --test_data data/zara01/test --ckpt_dir models/zara01 --config config.eth_ucy --fpc
-    $ python main.py --test_data data/zara02/test --ckpt_dir models/zara02 --config config.eth_ucy --fpc
+    $ python main.py --train data/eth/train --test data/eth/test --ckpt log_eth --config config/eth.py
+    $ python main.py --train data/hotel/train --test data/hotel/test --ckpt log_hotel --config config/hotel.py
+    $ python main.py --train data/univ/train --test data/univ/test --ckpt log_univ --config config/univ.py
+    $ python main.py --train data/zara01/train --test data/zara01/test --ckpt log_zara01 --config config/zara01.py
+    $ python main.py --train data/zara02/train --test data/zara02/test --ckpt log_zara02 --config config/zara02.py
 
     # SDD benchmark
-    $ python main.py --test_data data/sdd/test --ckpt_dir models/sdd --config config.sdd --fpc
+    $ python main.py --train data/sdd/train --test data/sdd/test --ckpt log_sdd --config config/sdd.py
 
     # NBA benchmark
-    $ python main.py --test_data data/nba/rebound/test --ckpt_dir models/nba/rebound --config config.nba_rebound --fpc
-    $ python main.py --test_data data/nba/score/test --ckpt_dir models/nba/score --config config.nba_score --fpc
+    $ python main.py --train data/nba/rebound/train --test data/nba/rebound/test --ckpt log_rebound --config config/nba_rebound.py
+    $ python main.py --train data/nba/score/train --test data/nba/score/test --ckpt log_score --config config/nba_score.py
 
-Remove `--fpc` to see evaluation results without FPC. Please refer to the paper for details of FPC.
+## Evaluation and Pre-trained Models
 
-## Training New Model
+Command to evaluate a pre-trained model:
+
+    $ python main.py --test <test_data_dir> --ckpt <checkpoint_dir> --config <config_file>
+
+We provide our pretained models in `models` folder. To evaluate our pre-trained models, please run
+
+
+    # ETH/UCY benchmarks
+    $ python main.py --test data/eth/test --ckpt models/eth --config config/eth.py
+    $ python main.py --test data/hotel/test --ckpt models/hotel --config config/hotel.py
+    $ python main.py --test data/univ/test --ckpt models/univ --config config/univ.py
+    $ python main.py --test data/zara01/test --ckpt models/zara01 --config config/zara01.py
+    $ python main.py --test data/zara02/test --ckpt models/zara02 --config config/zara02.py
+
+    # SDD benchmark
+    $ python main.py --test data/sdd/test --ckpt models/sdd --config config/sdd_pixel.py
+
+    # NBA benchmark
+    $ python main.py --test data/nba/rebound/test --ckpt models/nba/rebound --config config/nba_rebound.py
+    $ python main.py --test data/nba/score/test --ckpt models/nba/score --config config/nba_score.py
+
+Due to the large size of NBA scoring dataset (592,640 trajectories), it may take about 2 hours to perform a full test with FPC. To run the model without FPC for fast testing, please use `--no-fpc` option.
+
+All our training and testing were done on machines equipped with V100 GPU. The test results may vary a little when the model runs on machines with different hardware or a different version of pytorch/cuda. 
+
+## Training New Models
 
 ### Prepare your own dataset
 
-Our code supports loading trajectories from multiple scenes. Just split your data into training and testing sets and put each scene as a `txt` data file into the corresponding folder.
+Our code supports loading trajectories from multiple files, each of which represent a scene. Just split your data into training and testing sets and put each scene as a `txt` file into the corresponding folder.
 
 Each line in the data files is in the format of
 
-    frame_ID:int agent_ID:int pos_x:float pos_y:float group:str
+    frame_ID:int  agent_ID:int  pos_x:float  pos_y:float  group:str
 
-where `frame_ID` and `agent_ID` are integers and `pos_x` and `pos_y` are float numbers. The `group` field is optional to identify the agent type/group.
+where `frame_ID` and `agent_ID` are integers and `pos_x` and `pos_y` are float numbers. The `group` field is optional to identify the agent type/group such that the model can be trained to perform prediction for specific groups/types of agents. See `config/nba_rebound.py` for an example where the model is trained to predict the movement of players only and the basketball appears only as a neighbor of other agents.
 
 ### Setup your config file
 
@@ -94,13 +96,8 @@ A key hyperparameter that needs to pay attention is `NEIGHBOR_RADIUS`. In a comm
 
 ### Training
 
-    $ python main.py --train_data <folder_of_training_data> --test_data <folder_of_testing_data> --ckpt_dir <checkpoint_folder> --config <config_file>
+    $ python main.py --train <folder_of_training_data> --test <folder_of_testing_data> --ckpt <checkpoint_folder> --config <config_file>
 
 ### Evaluation
 
-    # with PFC
-    $ python main.py --test_data <folder_of_testing_data> --ckpt_dir <checkpoint_folder> --config <config_file> --fpc
-
-    # w/o FPC
-    $ python main.py --test_data <folder_of_testing_data> --ckpt_dir <checkpoint_folder> --config <config_file>
-    
+    $ python main.py --test <folder_of_testing_data> --ckpt <checkpoint_folder> --config <config_file>

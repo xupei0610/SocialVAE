@@ -42,8 +42,7 @@ class Dataloader(torch.utils.data.Dataset):
         frameskip: int=1, inclusive_groups: Optional[Sequence]=None,
         batch_first: bool=False, seed: Optional[int]=None,
         device: Optional[torch.device]=None,
-        flip: bool=False, rotate: bool=False, scale: bool=False,
-        ob_radius: Optional[float]=None,
+        flip: bool=False, rotate: bool=False, scale: bool=False
     ):
         super().__init__()
         self.ob_horizon = ob_horizon
@@ -51,7 +50,6 @@ class Dataloader(torch.utils.data.Dataset):
         self.horizon = self.ob_horizon+self.pred_horizon
         self.frameskip = int(frameskip) if frameskip and int(frameskip) > 1 else 1
         self.batch_first = batch_first
-        self.ob_radius = ob_radius
         self.flip = flip
         self.rotate = rotate
         self.scale = scale
@@ -187,8 +185,6 @@ class Dataloader(torch.utils.data.Dataset):
         time = np.sort(list(data.keys()))
         if len(time) < horizon+1: return None
         valid_horizon = self.ob_horizon + self.pred_horizon
-        # extend the observation radius a little bit to prevent computation errors
-        ob_radius = None if self.ob_radius is None else self.ob_radius + 0.5 
 
         traj = []
         e = len(time)
@@ -228,11 +224,6 @@ class Dataloader(torch.utils.data.Dataset):
                     hist = agents[:self.ob_horizon,i]  # L_ob x 6
                     future = agents[self.ob_horizon:valid_horizon,i,:2]  # L_pred x 2
                     neighbor = agents[:valid_horizon, [d for d in range(agents.shape[1]) if d != i]] # L x (N-1) x 6
-                    if ob_radius is not None:
-                        dp = neighbor[:,:,:2] - agents[:valid_horizon,i:i+1,:2]
-                        valid = np.linalg.norm(dp, axis=-1) <= ob_radius # L x (N-1)
-                        valid = np.any(valid, axis=0) # N-1
-                        neighbor = neighbor[:, valid]
                     traj.append((hist, future, neighbor))
             tid0 += 1
 
@@ -314,7 +305,7 @@ class Dataloader(torch.utils.data.Dataset):
             idx = int(float(item[1]))
             x = float(item[2])
             y = float(item[3])
-            group = item[4] if len(item) > 4 else None
+            group = item[4].split("/") if len(item) > 4 else None
             if t not in data:
                 data[t] = {}
             data[t][idx] = [x, y, group]
