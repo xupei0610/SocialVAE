@@ -214,7 +214,7 @@ if __name__ == "__main__":
         ade, fde = 10000, 10000
         perform_test = (train_data is None or epoch > config.TEST_SINCE) and test_data is not None
         if perform_test:
-            if not settings.fpc_finetune and losses is None and fpc_best > 1:
+            if not settings.no_fpc and not settings.fpc_finetune and losses is None and fpc_best > 1:
                 fpc = fpc_best
             else:
                 fpc = 1
