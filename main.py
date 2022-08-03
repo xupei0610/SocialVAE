@@ -75,7 +75,7 @@ if __name__ == "__main__":
                         batch, len(test_dataset), fpc_config, int(time.time()-tic)
                     ))
                     
-                    if fpc > 1:
+                    if config.PRED_SAMPLES > 0 and fpc > 1:
                         # disable fpc testing during training
                         y_ = []
                         for _ in range(fpc):
@@ -90,8 +90,9 @@ if __name__ == "__main__":
                         # n_samples x PRED_HORIZON x N x 2
                         y_ = model(x, neighbor, n_predictions=config.PRED_SAMPLES)
                     ade, fde = ADE_FDE(y_, y)
-                    ade = torch.min(ade, dim=0)[0]
-                    fde = torch.min(fde, dim=0)[0]
+                    if config.PRED_SAMPLES > 0:
+                        ade = torch.min(ade, dim=0)[0]
+                        fde = torch.min(fde, dim=0)[0]
                     ADE.append(ade)
                     FDE.append(fde)
             ADE = torch.cat(ADE)
