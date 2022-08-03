@@ -17,7 +17,7 @@ parser.add_argument("--ckpt", type=str, default=None)
 parser.add_argument("--device", type=str, default=None)
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--no-fpc", action="store_true", default=False)
-parser.add_argument("--fpc_finetune", action="store_true", default=False)
+parser.add_argument("--fpc-finetune", action="store_true", default=False)
 
 if __name__ == "__main__":
     settings = parser.parse_args()
@@ -251,8 +251,9 @@ if __name__ == "__main__":
         # FPC finetune if it is specified or after training
         precision = 2
         trunc = lambda v: np.trunc(v*10**precision)/10**precision
-        state_dict = torch.load(ckpt_best, map_location=settings.device)
-        model.load_state_dict(state_dict["model"])
+        if settings.ckpt:
+            state_dict = torch.load(ckpt_best, map_location=settings.device)
+            model.load_state_dict(state_dict["model"])
         ade_ = [trunc(state_dict["ade"].item())]
         fde_ = [trunc(state_dict["fde"].item())]
         fpc_ = [1]
@@ -269,3 +270,5 @@ if __name__ == "__main__":
         print(" ADE: {:.2f}; FDE: {:.2f} ({})".format(
             ade, fde, "FPC: {}".format(fpc) if fpc > 1 else "w/o FPC", 
         ))
+        if settings.ckpt:
+            torch.save(state_dict, ckpt_best)
