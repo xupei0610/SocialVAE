@@ -255,9 +255,11 @@ if __name__ == "__main__":
         if settings.ckpt:
             state_dict = torch.load(ckpt_best, map_location=settings.device)
             model.load_state_dict(state_dict["model"])
-        ade_ = [trunc(state_dict["ade"].item())]
-        fde_ = [trunc(state_dict["fde"].item())]
-        fpc_ = [1]
+            ade_ = [trunc(state_dict["ade"].item())]
+            fde_ = [trunc(state_dict["fde"].item())]
+            fpc_ = [1]
+        else:
+            ade_, fde_, fpc_ = [], [], []
         for fpc in config.FPC_SEARCH_RANGE:
             ade, fde = test(model, fpc)
             ade_.append(trunc(ade.item()))
@@ -265,11 +267,11 @@ if __name__ == "__main__":
             fpc_.append(fpc)
         i = np.argmin(np.add(ade_, fde_))
         ade, fde, fpc = ade_[i], fde_[i], fpc_[i]
-        state_dict["ade_fpc"] = ade
-        state_dict["fde_fpc"] = fde
-        state_dict["fpc"] = fpc
+        if settings.ckpt:
+            state_dict["ade_fpc"] = ade
+            state_dict["fde_fpc"] = fde
+            state_dict["fpc"] = fpc
+            torch.save(state_dict, ckpt_best)
         print(" ADE: {:.2f}; FDE: {:.2f} ({})".format(
             ade, fde, "FPC: {}".format(fpc) if fpc > 1 else "w/o FPC", 
         ))
-        if settings.ckpt:
-            torch.save(state_dict, ckpt_best)
