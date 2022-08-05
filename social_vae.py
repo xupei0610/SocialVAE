@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-        
+
 class SocialVAE(torch.nn.Module):
 
     class DecoderZH(torch.nn.Module):
@@ -14,16 +14,16 @@ class SocialVAE(torch.nn.Module):
                 torch.nn.ReLU6()
             )
             self.mu = torch.nn.Linear(embed_dim, output_dim)
-            self.std = torch.nn.Sequential(
-                torch.nn.Linear(embed_dim, output_dim),
-                torch.nn.Softplus()
-            )
+            # self.std = torch.nn.Sequential(
+            #     torch.nn.Linear(embed_dim, output_dim),
+            #     torch.nn.Softplus()
+            # )
 
         def forward(self, z, h):
             xy = self.embed(torch.cat((z, h), -1))
             loc = self.mu(xy)
-            std = self.std(xy)
-            return loc, std
+            # std = self.std(xy)
+            return loc, None #std
 
 
     class P_Z(torch.nn.Module):
@@ -83,16 +83,16 @@ class SocialVAE(torch.nn.Module):
             return self.embed_zd(code)
 
 
-    def __init__(self, horizon, observe_radius=2):
+    def __init__(self, horizon, ob_radius=2, hidden_dim=256):
         super().__init__()
-        self.observe_radius = observe_radius
+        self.ob_radius = ob_radius
         self.horizon = horizon
-        hidden_dim = 256
-        hidden_dim_fy = 256
+        hidden_dim_fx = hidden_dim
+        hidden_dim_fy = hidden_dim
         hidden_dim_by = 256
         feature_dim = 256
         self_embed_dim = 128
-        neighbor_embed_dim = hidden_dim-self_embed_dim
+        neighbor_embed_dim = 128
         z_dim = 32
         d_dim = 2
 
@@ -120,7 +120,7 @@ class SocialVAE(torch.nn.Module):
             torch.nn.Linear(feature_dim, feature_dim)
         )
         self.embed_q = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, feature_dim),
+            torch.nn.Linear(hidden_dim_fx, feature_dim),
             torch.nn.ReLU6(),
             torch.nn.Linear(feature_dim, feature_dim),
             torch.nn.ReLU6(),
@@ -128,20 +128,20 @@ class SocialVAE(torch.nn.Module):
         )
         self.attention_nonlinearity = torch.nn.LeakyReLU(0.2)
 
-        self.rnn_fx = torch.nn.GRU(self_embed_dim+neighbor_embed_dim, hidden_dim)
+        self.rnn_fx = torch.nn.GRU(self_embed_dim+neighbor_embed_dim, hidden_dim_fx)
         self.rnn_fx_init = torch.nn.Sequential(
-            torch.nn.Linear(2, hidden_dim), # dp
+            torch.nn.Linear(2, hidden_dim_fx), # dp
             torch.nn.ReLU6(),
-            torch.nn.Linear(hidden_dim, hidden_dim*self.rnn_fx.num_layers),
+            torch.nn.Linear(hidden_dim_fx, hidden_dim_fx*self.rnn_fx.num_layers),
             torch.nn.ReLU6(),
-            torch.nn.Linear(hidden_dim*self.rnn_fx.num_layers, hidden_dim*self.rnn_fx.num_layers),
+            torch.nn.Linear(hidden_dim_fx*self.rnn_fx.num_layers, hidden_dim_fx*self.rnn_fx.num_layers),
         )
         self.rnn_by = torch.nn.GRU(self_embed_dim+neighbor_embed_dim, hidden_dim_by)
 
         self.embed_zd = SocialVAE.EmbedZD(z_dim, d_dim, z_dim)
         self.rnn_fy = torch.nn.GRU(z_dim, hidden_dim_fy)
         self.rnn_fy_init = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, hidden_dim_fy*self.rnn_fy.num_layers),
+            torch.nn.Linear(hidden_dim_fx, hidden_dim_fy*self.rnn_fy.num_layers),
             torch.nn.ReLU6(),
             torch.nn.Linear(hidden_dim_fy*self.rnn_fy.num_layers, hidden_dim_fy*self.rnn_fy.num_layers)
         )
@@ -184,8 +184,8 @@ class SocialVAE(torch.nn.Module):
             dv = neighbor_v - v.unsqueeze(-2)       # L x N x Nn x 2
 
             # social features
-            dist = dp.norm(dim=-1)                  # (L+1) x N x Nn
-            mask = dist <= self.observe_radius
+            dist = dp.norm(dim=-1)                          # (L+1) x N x Nn
+            mask = dist <= self.ob_radius
             dp0, mask0 = dp[0], mask[0]
             dp, mask = dp[1:], mask[1:]
             dist = dist[1:]
@@ -198,9 +198,9 @@ class SocialVAE(torch.nn.Module):
             mpd = (dp + tau.unsqueeze(-1)*dv).norm(dim=-1)  # L x N x Nn
             features = torch.stack((dist, bearing, mpd), -1)# L x N x Nn x 3
 
-        k = self.embed_k(features)                    # L x N x Nn x d
+        k = self.embed_k(features)                          # L x N x Nn x d
         s = self.embed_s(torch.cat((v, a), -1))
-        n = self.embed_n(torch.cat((dp, dv), -1))    # L x N x Nn x ...
+        n = self.embed_n(torch.cat((dp, dv), -1))           # L x N x Nn x ...
 
         h = self.rnn_fx_init(dp0)                           # N x Nn x d
         h = (mask0.unsqueeze(-1) * h).sum(-2)               # N x d
@@ -208,7 +208,7 @@ class SocialVAE(torch.nn.Module):
         h = h.permute(2, 0, 1).contiguous()
 
         for t in range(L1):
-            q = self.embed_q(h[-1])                     # N x d
+            q = self.embed_q(h[-1])                         # N x d
             att = self.attention(q, k[t], mask[t])          # N x Nn
             x_t = att.unsqueeze(-2) @ n[t]                  # N x 1 x d
             x_t = x_t.squeeze(-2)                           # N x d
@@ -216,16 +216,18 @@ class SocialVAE(torch.nn.Module):
             _, h = self.rnn_fx(x_t, h)
         x = h[-1]
         if y is None: return x
-
-        b = [None]*L2
-        h = None
-        for t in range(-1, -L2-1, -1):
-            mask_t = mask[t].unsqueeze(-1)                  # N x Nn x 1
-            x_t = (mask_t * n[t]).sum(-2)                   # N x d
-            x_t = torch.cat((x_t, s[t]), -1).unsqueeze(0)
-            _, h = self.rnn_by(x_t, h)
-            b[t] = h[-1]
+        mask_t = mask[L1:L1+L2].unsqueeze(-1)               # L2 x N x Nn x 1
+        n_t = n[L1:L1+L2]                                   # L2 x N x Nn x d
+        n_t = (mask_t * n_t).sum(-2)                        # L2 x N x d
+        s_t = s[L1:L2+L2]
+        x_t = torch.cat((n_t, s_t), -1)
+        x_t = torch.flip(x_t, (0,))
+        b, _ = self.rnn_by(x_t)                             # L2 x N x n_layer*d
+        if self.rnn_by.num_layers > 1:
+            b = b[...,-b.size(-1)//self.rnn_by.num_layers:]
+        b = torch.flip(b, (0,))
         return x, b
+
 
     def forward(self, x, neighbor=None, n_predictions=1):
         # x: L x N x 6
@@ -286,8 +288,8 @@ class SocialVAE(torch.nn.Module):
         if y.size(0) != self.horizon:
             print("[Warn] Unmatched sequence length in inference and generative model. ({} vs {})".format(y.size(0), self.horizon))
         
-        h, b = self.enc(x, neighbor, y=y)
-        h = self.rnn_fy_init(h)
+        o, b = self.enc(x, neighbor, y=y)
+        h = self.rnn_fy_init(o)
         h = h.view(N, -1, self.rnn_fy.num_layers)
         h = h.permute(2, 0, 1).contiguous()
 
