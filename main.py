@@ -159,7 +159,7 @@ if __name__ == "__main__":
                 optimizer.load_state_dict(state_dict["optimizer"])
                 rng_state = [r.to("cpu") if torch.is_tensor(r) else r for r in state_dict["rng_state"]]
             start_epoch = state_dict["epoch"]
-    end_epoch = start_epoch+1 if train_data is None or start_epoch >= settings.epochs else settings.epochs
+    end_epoch = start_epoch+1 if train_data is None or start_epoch >= config.EPOCHS else config.EPOCHS
 
     if settings.train and settings.ckpt:
         logger = SummaryWriter(log_dir=settings.ckpt)
@@ -178,7 +178,7 @@ if __name__ == "__main__":
         #####                                                                    ######
         ###############################################################################
         losses = None
-        if train_data is not None and epoch <= settings.epochs:
+        if train_data is not None and epoch <= config.EPOCHS:
             print("Epoch {}/{}".format(epoch, config.EPOCHS))
             tic = time.time()
             set_rng_state(rng_state, settings.device)
