@@ -14,16 +14,11 @@ class SocialVAE(torch.nn.Module):
                 torch.nn.ReLU6()
             )
             self.mu = torch.nn.Linear(embed_dim, output_dim)
-            # self.std = torch.nn.Sequential(
-            #     torch.nn.Linear(embed_dim, output_dim),
-            #     torch.nn.Softplus()
-            # )
 
         def forward(self, z, h):
             xy = self.embed(torch.cat((z, h), -1))
             loc = self.mu(xy)
-            # std = self.std(xy)
-            return loc, None #std
+            return loc
 
 
     class P_Z(torch.nn.Module):
@@ -229,11 +224,38 @@ class SocialVAE(torch.nn.Module):
         return x, b
 
 
-    def forward(self, x, neighbor=None, n_predictions=1):
-        # x: L x N x 6
-        # neighbor: L x N x Nn x 6, padding at Nn dimension using large value (e.g. 1e9)
-        # output: n_predictions x horizon x N x 2, for n_predictions > 0
+    def forward(self, *args, **kwargs):
+        # We put the training and testing forward function together in order to support 
+        #   DistributedDataParallel better.
+        # training:
+        #   x: L x N x 6
+        #   neighbor: L x N x Nn x 6, padding at Nn dimension using large value (e.g. 1e9)
+        #   output: args to self.loss()
+        # testing:
+        #   x: L x N x 6
+        #   neighbor: L x N x Nn x 6, padding at Nn dimension using large value (e.g. 1e9)
+        #   n_predictions: int, number of predictions
+        #   output: n_predictions x horizon x N x 2, for n_predictions > 0
         #         horizon x N x 2, n_predictions=0 for deterministic prediction
+
+        self.rnn_fx.flatten_parameters()
+        self.rnn_fy.flatten_parameters()
+        if self.training:
+            self.rnn_by.flatten_parameters()
+            args = iter(args)
+            x = kwargs["x"] if "x" in kwargs else next(args)
+            y = kwargs["y"] if "y" in kwargs else next(args)
+            neighbor = kwargs["neighbor"] if "neighbor" in kwargs else next(args)
+            return self.learn(x, y, neighbor)
+
+        args = iter(args)
+        x = kwargs["x"] if "x" in kwargs else next(args)
+        neighbor = kwargs["neighbor"] if "neighbor" in kwargs else next(args)
+        try:
+            n_predictions = kwargs["n_predictions"] if "n_predictions" in kwargs else next(args)
+        except:
+            n_predictions = 0
+
         stochastic = n_predictions > 0
         if neighbor is None:
             neighbor_shape = [_ for _ in x.shape]
@@ -243,16 +265,18 @@ class SocialVAE(torch.nn.Module):
         if C < 3:
             x = x.unsqueeze(1)
             neighbor = neighbor.unsqueeze(1)
+            if y is not None: y = y.unsqueeze(1)
         N = x.size(1)
 
         neighbor = neighbor[:x.size(0)]
-        o = self.enc(x, neighbor)
-        h = self.rnn_fy_init(o)
+        h = self.enc(x, neighbor)
+           
+        h = self.rnn_fy_init(h)
         h = h.view(N, -1, self.rnn_fy.num_layers)
         h = h.permute(2, 0, 1)
         if stochastic: h = h.repeat(1, n_predictions, 1)
         h = h.contiguous()
-
+        
         D = []
         for t in range(self.horizon):
             p_z = self.p_z(h[-1])
@@ -260,7 +284,7 @@ class SocialVAE(torch.nn.Module):
                 z = p_z.sample()
             else:
                 z = p_z.mean
-            d = self.dec(z, h[-1])[0]
+            d = self.dec(z, h[-1])
             D.append(d)
             if t == self.horizon - 1: break
             zd = self.embed_zd(z, d)
@@ -274,11 +298,7 @@ class SocialVAE(torch.nn.Module):
         if C < 3: pred = pred.squeeze(1)
         return pred
 
-
-    def loss(self, x, y, neighbor):
-        # x: L x N x 6
-        # y: horizon x N x 2
-        # neighbor: (L+horizon) x N x Nn x 6, padding at Nn dimension using large value (e.g. 1e9)
+    def learn(self, x, y, neighbor=None, map=None):
         C = x.dim()
         if C < 3:
             x = x.unsqueeze(1)
@@ -288,8 +308,9 @@ class SocialVAE(torch.nn.Module):
         if y.size(0) != self.horizon:
             print("[Warn] Unmatched sequence length in inference and generative model. ({} vs {})".format(y.size(0), self.horizon))
         
-        o, b = self.enc(x, neighbor, y=y)
-        h = self.rnn_fy_init(o)
+
+        h, b = self.enc(x, neighbor, y=y)
+        h = self.rnn_fy_init(h)
         h = h.view(N, -1, self.rnn_fy.num_layers)
         h = h.permute(2, 0, 1).contiguous()
 
@@ -299,8 +320,8 @@ class SocialVAE(torch.nn.Module):
             p_z = self.p_z(h[-1])
             q_z = self.q_z(h[-1], b[t])
             z = q_z.rsample()
-            d = self.dec(z, h[-1])[0]
-            
+            d = self.dec(z, h[-1])
+
             P.append(p_z)
             Q.append(q_z)
             D.append(d)
@@ -309,17 +330,22 @@ class SocialVAE(torch.nn.Module):
             if t == self.horizon - 1: break
             zd = self.embed_zd(z, d)
             _, h = self.rnn_fy(zd.unsqueeze(0), h)
+
         d = torch.stack(D)
         with torch.no_grad():
             y = y - x[-1,...,:2].unsqueeze(0)
         pred = torch.cumsum(d, 0)
 
+        err = (pred - y).square()
         kl = []
         for p, q, z in zip(P, Q, Z):
             kl.append(q.log_prob(z) - p.log_prob(z))
+        kl = torch.stack(kl)
+        return err, kl
 
-        kl = torch.stack(kl).mean()
-        rec = torch.nn.functional.mse_loss(pred, y)
+    def loss(self, err, kl):
+        rec = err.mean()
+        kl = kl.mean()
 
         return {
             "loss": kl+rec,
