@@ -12,6 +12,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--train", nargs='+', default=[])
 parser.add_argument("--test", nargs='+', default=[])
+parser.add_argument("--frameskip", type=int, default=1)
 parser.add_argument("--config", type=str, default=None)
 parser.add_argument("--ckpt", type=str, default=None)
 parser.add_argument("--device", type=str, default=None)
@@ -39,7 +40,7 @@ if __name__ == "__main__":
     #####                                                                    ######
     ###############################################################################
     kwargs = dict(
-            batch_first=False,
+            batch_first=False, frameskip=settings.frameskip,
             ob_horizon=config.OB_HORIZON, pred_horizon=config.PRED_HORIZON,
             device=settings.device, seed=settings.seed)
     train_data, test_data = None, None
