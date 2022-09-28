@@ -253,14 +253,7 @@ if __name__ == "__main__":
         # FPC finetune if it is specified or after training
         precision = 2
         trunc = lambda v: np.trunc(v*10**precision)/10**precision
-        if settings.ckpt:
-            state_dict = torch.load(ckpt_best, map_location=settings.device)
-            model.load_state_dict(state_dict["model"])
-            ade_ = [trunc(state_dict["ade"].item())]
-            fde_ = [trunc(state_dict["fde"].item())]
-            fpc_ = [1]
-        else:
-            ade_, fde_, fpc_ = [], [], []
+        ade_, fde_, fpc_ = [], [], []
         for fpc in config.FPC_SEARCH_RANGE:
             ade, fde = test(model, fpc)
             ade_.append(trunc(ade.item()))
