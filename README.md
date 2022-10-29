@@ -1,6 +1,7 @@
 # SocialVAE: Human Trajectory Prediction using Timewise Latents
 
-This is the official implementation for _**SocialVAE: Human Trajectory Prediction using Timewise Latents**_. [[arXiv](https://arxiv.org/abs/2203.08207)]
+This is the official implementation for _**SocialVAE: Human Trajectory Prediction using Timewise Latents**_. [[arXiv](https://arxiv.org/abs/2203.08207)] [[YouTube](
+https://youtu.be/J2c2vFDKfbo)]
 
 
 _**Abstract**_ -- Predicting pedestrian movement is critical for human behavior analysis and also for safe and efficient human-agent interactions. 
@@ -11,11 +12,14 @@ We show that SocialVAE improves current state-of-the-art performance on several 
 including the ETH/UCY benchmark, the Stanford Drone Dataset and SportVU NBA movement dataset.
 
     @inproceedings{socialvae2022,
-        author = {Xu, Pei and Hayet, Jean-Bernard and Karamouzas, Ioannis},
-        title = {SocialVAE: Human Trajectory Prediction using Timewise Latents},
-        booktitle = {European Conference on Computer Vision},
-        year = {2022},
-        organization={Springer}
+        author={Xu, Pei and Hayet, Jean-Bernard and Karamouzas, Ioannis},
+        title={SocialVAE: Human Trajectory Prediction using Timewise Latents},
+        booktitle="Computer Vision -- ECCV 2022",
+        year="2022",
+        publisher="Springer Nature Switzerland",
+        address="Cham",
+        pages="511--528",
+        isbn="978-3-031-19772-7"
     }
 
 Our approach shows low errors in trajectory prediction on challenging scenarios with complex and intensive human-human interctions. Below we show the prediction of our model for basketball players. We also include our NBA datasets (`data/nba`) in this repository. **Caution:** the NBA datasets were recorded in the unit of feet. Please refer to our paper for more details.
