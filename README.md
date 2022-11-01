@@ -1,7 +1,7 @@
 # SocialVAE: Human Trajectory Prediction using Timewise Latents
 
 This is the official implementation for _**SocialVAE: Human Trajectory Prediction using Timewise Latents**_. [[arXiv](https://arxiv.org/abs/2203.08207)] [[YouTube](
-https://youtu.be/J2c2vFDKfbo)]
+https://youtu.be/-e8M72OOUWA)]
 
 
 _**Abstract**_ -- Predicting pedestrian movement is critical for human behavior analysis and also for safe and efficient human-agent interactions. 
