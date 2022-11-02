@@ -262,10 +262,13 @@ if __name__ == "__main__":
         i = np.argmin(np.add(ade_, fde_))
         ade, fde, fpc = ade_[i], fde_[i], fpc_[i]
         if settings.ckpt:
-            state_dict["ade_fpc"] = ade
-            state_dict["fde_fpc"] = fde
-            state_dict["fpc"] = fpc
-            torch.save(state_dict, ckpt_best)
+            ckpt_best = os.path.join(settings.ckpt, "ckpt-best")
+            if os.path.exists(ckpt_best):
+                state_dict = torch.load(ckpt_best, map_location=settings.device)
+                state_dict["ade_fpc"] = ade
+                state_dict["fde_fpc"] = fde
+                state_dict["fpc"] = fpc
+                torch.save(state_dict, ckpt_best)
         print(" ADE: {:.2f}; FDE: {:.2f} ({})".format(
             ade, fde, "FPC: {}".format(fpc) if fpc > 1 else "w/o FPC", 
         ))
